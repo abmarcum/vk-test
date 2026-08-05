@@ -67,11 +67,11 @@ const (
 // of accepting arbitrary/malicious file types (OWASP: unrestricted file
 // upload).
 var AllowedContentTypes = map[string]bool{
-	"video/mp4":       true,
-	"video/webm":      true,
-	"video/quicktime": true,
+	"video/mp4":        true,
+	"video/webm":       true,
+	"video/quicktime":  true,
 	"video/x-matroska": true,
-	"video/ogg":       true,
+	"video/ogg":        true,
 }
 
 // IsAllowedContentType reports whether the given content type is permitted
@@ -128,9 +128,9 @@ type VideoResponse struct {
 
 // ListVideosResponse is the paginated response body for GET /videos.
 type ListVideosResponse struct {
-	Videos     []VideoResponse `json:"videos"`
-	NextCursor string          `json:"next_cursor,omitempty"`
-	PageSize   int             `json:"page_size"`
+	Videos        []VideoResponse `json:"videos"`
+	NextPageToken string          `json:"next_page_token,omitempty"`
+	PageSize      int             `json:"page_size"`
 }
 
 // ErrorResponse is the standard JSON error envelope returned by the API on
