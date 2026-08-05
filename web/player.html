@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video Player</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #0b0d10;
+      color: #f2f3f5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 2rem 1rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    video {
+      width: 100%;
+      background: #000;
+      border-radius: 8px;
+    }
+    p.hint {
+      color: #9aa2ad;
+      font-size: 0.875rem;
+      text-align: center;
+      margin: 0;
+    }
+    p.hint.is-error {
+      color: #ef4444;
+    }
+    code {
+      background: #1c2027;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      font-size: 0.85em;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <video id="player" controls preload="metadata" playsinline>
+      Your browser does not support the video tag.
+    </video>
+    <p class="hint" id="hint"></p>
+  </div>
+
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var id = params.get('id') || window.location.hash.replace(/^#/, '');
+      var hint = document.getElementById('hint');
+      var video = document.getElementById('player');
+
+      if (!id) {
+        hint.innerHTML = 'No video ID provided. Append <code>?id={video-id}</code> to this URL.';
+        return;
+      }
+
+      // Minimal native error handling (PM finding #5, v3.0):
+      // covers malformed IDs, 404s, and non-2xx/206 responses from the
+      // stream endpoint. Intentionally unstyled — richer error UI is a
+      // Tier 2 concern (see §3.2.3 PlayerErrorState).
+      video.addEventListener('error', function () {
+        hint.textContent = 'Unable to load video "' + id + '". It may not exist, or the server returned an error.';
+        hint.classList.add('is-error');
+      });
+
+      var source = document.createElement('source');
+      // NOTE: stream endpoint path assumes PRD-defined route `/videos/{id}/stream`.
+      source.src = '/videos/' + encodeURIComponent(id) + '/stream';
+      video.appendChild(source);
+      hint.textContent = 'Streaming video ' + id;
+    })();
+  </script>
+</body>
+</html>
+```
+
+---
+
+## 3. Tier 2 — Optional Enhancement Design (Design Recommendation, Not a Requirement)
+
+Everything below this point describes a **richer experience** that Engineering may build on top of Tier 1, entirely at its discretion. It is offered as a coherent, implementable design system, not a mandate. **Per §0.0, this entire tier was produced speculatively and was not requested by the PRD** — nothing below should block or delay shipping Tier 1, and the swarm should feel free to discard it wholesale.
+
+### 3.1 Recommended (not required) file structure
+
+If Engineering elects to build Tier 2, this is a **suggested** split — not inherited from any PRD or Architecture requirement, and subject to the same path-confirmation caveat now applied consistently to Tier 1 (§2):
+
+```
+web/
+├── player.html        # Single-page shell: Library view + Player view (client-side toggled)
+├── style.css           # Design tokens + component styles
+└── app.js              # Fetch calls, view state, render logic (vanilla JS, no deps)
+```
+
+Two logical "views" would be implemented as toggled sections within one HTML document, using hash-based navigation (no server-side routing beyond serving the one static file):
+
+| View | Route (client-side, hash-based) | Purpose |
+|---|---|---|
+| **Library View** | `#/` (default) | List all videos, upload new video |
+| **Player View** | `#/videos/{id}` | Stream a single video with native controls |
+
+**Serving mechanism** (e.g., Go `http.FileServer`, exact directory path) is **not confirmed** by any reviewed source document — same caveat as Tier 1's path (§2). Whatever mechanism Engineering already uses to serve Tier 1 is assumed sufficient for Tier 2's additional static files — no new serving infrastructure is implied by this design.
+
+---
+
+### 3.2 Page Layouts (Wireframe-Level Detail)
+
+#### 3.2.1 Global App Shell
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Header Bar                                                    │
+│  ┌────────────┐                                    ┌────────┐ │
+│  │ ▶ StreamApp │                                    │ (empty)│ │
+│  └────────────┘                                    └────────┘ │
+├──────────────────────────────────────────────────────────────┤
+│                                                                  │
+│                     < Active View Renders Here >                │
+│                                                                  │
+├──────────────────────────────────────────────────────────────┤
+│  Footer (muted, single line): "Self-hosted video streaming"    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+- Fixed-width content column, centered, `max-width: 960px`, generous side gutters on mobile.
+- No sidebar, no nav menu — flat IA, only two views.
+
+#### 3.2.2 Library View (`#/`)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Your Videos                                    [ ⬆ Upload ]   │
+│  ───────────────────────────────────────────────────────────   │
+│                                                                  │
+│  ┌ Upload Panel (collapsed by default; expands on click) ────┐ │
+│  │  [ Choose file... ]  [ Upload ]                            │ │
+│  │  ▓▓▓▓▓▓▓▓▓░░░░░░░░  62%   (progress bar, shown while active)│ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
+│  │  ▶        │  │  ▶        │  │  ▶        │  │  ▶        │      │
+│  │ [thumb]   │  │ [thumb]   │  │ [thumb]   │  │ [thumb]   │      │
+│  │           │  │           │  │           │  │           │      │
+│  │ file.mp4  │  │ demo.mov  │  │ clip.webm │  │ intro.mp4 │      │
+│  │ 12.4 MB   │  │ 340.1 MB  │  │ 8.2 MB    │  │ 55.0 MB   │      │
+│  │ 2h ago    │  │ 1d ago    │  │ 3d ago    │  │ 5d ago    │      │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘        │
+│                                                                  │
+│                     [ Load more ▾ ]  (pagination — see §5.2)    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Grid behavior:**
+- CSS Grid, `repeat(auto-fill, minmax(220px, 1fr))`, `gap: var(--space-4)`.
+- Cards are the sole navigation affordance into Player View.
+- Thumbnail: since v1 has no transcoding/thumbnail generation (per PRD non-goals), use a static placeholder graphic (centered play-glyph over a neutral gradient tile, content-type badge in corner — mapping table in §9.3).
+
+**Empty state:**
+```
+┌──────────────────────────────────────────────────────────────┐
+│                         🎬                                     │
+│                No videos yet                                   │
+│         Upload your first video to get started.                │
+│                    [ ⬆ Upload a video ]                         │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Error state:**
+```
+┌──────────────────────────────────────────────────────────────┐
+│   ⚠  Couldn't load videos.                                     │
+│   The service may be starting up or unavailable.                │
+│                        [ Retry ]                                │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Loading state:** 4 skeleton cards (pulsing gray blocks) on initial fetch.
+
+#### 3.2.3 Player View (`#/videos/{id}`)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  ← Back to library                                              │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │                 <video> — native controls                 │   │
+│  │              (16:9 container, black letterbox)             │   │
+│  └────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  demo-final-v3.mp4                                              │
+│  video/mp4  ·  340.1 MB  ·  Uploaded Jan 14, 2025, 3:02 PM       │
+│                                                                  │
+│  [ Copy stream link ]   [ Open in new tab ]                     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Player behavior:**
+- `<video controls preload="metadata" playsinline>` with `<source src=".../stream" type="{content_type}">`.
+- Native browser controls only — no custom scrubber (avoids re-implementing range-seek UX; correctly exercises the API's `206`/`Content-Range` support per PRD §4.2 / §13 acceptance test).
+- `Content-Type` from the metadata response is set on `<source>` to aid codec negotiation.
+- **Auth handling:** tracked as **OQ-1** (§14) — this is a required Engineering/Architect decision, not resolved by this spec alone.
+
+**Error state (404):**
+```
+┌──────────────────────────────────────────────────────────────┐
+│  ← Back to library                                              │
+│                         ⚠                                      │
+│                Video not found                                 │
+│        It may have been removed, or the link is incorrect.      │
+│                    [ Back to library ]                          │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Loading state:** dark skeleton block with centered spinner until `GET /videos/{id}` resolves; `<video>` only mounts once metadata succeeds (avoids broken-source flash).
+
+#### 3.2.4 Upload Panel (embedded, Library View)
+
+```
+Collapsed:  [ ⬆ Upload video ]
+
+Expanded:
+┌────────────────────────────────────────────────────────────┐
+│  Upload a video                                    [ ✕ ]     │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │   📁  Drag & drop a file here, or [ Browse files ]     │   │
+│  │       Accepted: MP4, WebM, MOV · Max 500 MB            │   │
+│  └──────────────────────────────────────────────────────┘   │
+│  (once file selected)                                         │
+│  🎞  demo.mp4  ·  340.1 MB                          [ Upload ] │
+│  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░  58%                        │
+└────────────────────────────────────────────────────────────┘
+```
+
+- Uses `XMLHttpRequest` (not `fetch`) to get `upload.onprogress` events — implementation snippet in §4.2.
+- Client-side pre-validation mirrors server rules (not a security boundary) — see §9.1 for the config drift caveat.
+- On `201`: panel collapses, success toast appears, Library grid prepends the new card optimistically.
+- On `4xx/5xx`: inline error text within the panel (actionable, correctable state).
+
+---
+
+## 4. Tier 2 Implementation Notes (Illustrative Snippets)
+
+These are **implementation guidance snippets**, not full production code — provided so Frontend Engineering has an unambiguous reference for two easily-mis-implemented details.
