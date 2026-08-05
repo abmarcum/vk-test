@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -89,46 +90,3 @@ func getEnv(key, def string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
 	}
-	return def
-}
-
-func getEnvInt64(key string, def int64) int64 {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return def
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return def
-	}
-	return n
-}
-
-func getEnvDuration(key string, defSeconds int64) time.Duration {
-	return time.Duration(getEnvInt64(key, defSeconds))
-}
-
-// -----------------------------------------------------------------------------
-// Entry point
-// -----------------------------------------------------------------------------
-
-func main() {
-	logger := newLogger()
-	slog.SetDefault(logger)
-
-	cfg, err := loadConfig()
-	if err != nil {
-		logger.Error("configuration error", "error", err)
-		os.Exit(1)
-	}
-
-	// Root context governs the lifetime of GCP clients. It is cancelled on
-	// SIGTERM/SIGINT (the signals Cloud Run sends on scale-down/deploy).
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
-
-	// storage.go: NewStorageClient constructs and owns the GCS + Firestore
-	// SDK clients, exposing the data-access methods used by handlers.go.
-	store, err := NewStorageClient(ctx, cfg.GCPProjectID, cfg.GCSBucket)
-	if err != nil {
-		logger.Error("
